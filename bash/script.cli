@@ -1,0 +1,24 @@
+set -e
+
+echo "Fetching infrastructure runtime configuration parameters..."
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+# Safe validation check ensuring identity blocks are ready to expose values
+SEARCH_PRINCIPAL_ID=$(az search service show -g rg-ops-copilot-prod -n search-ops-copilot --query identity.principalId -o tsv)
+
+if [ -z "$SEARCH_PRINCIPAL_ID" ]; then
+    echo "ERROR: AI Search Managed Identity Principal not found! Ensure Terraform applied successfully first."
+    exit 1
+fi
+
+STORAGE_ID=$(az storage account show -g rg-ops-copilot-prod -n saopscopilotdocs --query id -o tsv)
+
+echo "Assigning Storage Blob Data Reader to AI Search Identity..."
+az role assignment create --assignee "$SEARCH_PRINCIPAL_ID" --role "Storage Blob Data Reader" --scope "$STORAGE_ID"
+
+echo "Configuring Developer Access Control parameters..."
+CURRENT_USER_ID=$(az ad signed-in-user show --query id -o tsv)
+az role assignment create --assignee "$CURRENT_USER_ID" --role "Search Index Data Contributor" --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/rg-ops-copilot-prod"
+az role assignment create --assignee "$CURRENT_USER_ID" --role "Cognitive Services OpenAI User" --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/rg-ops-copilot-prod"
+
+echo "Configuration applied successfully!"
